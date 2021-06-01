@@ -102,7 +102,6 @@ commands:
           when: << parameters.when_to_run >>
           command: |
             SUCCESS=$(curl -H "token: ${MEMSTASH_TOKEN}" --request GET https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID})
-            # Curl command here to see if there was a successful migration associated with the workflow id, store result in SUCCESS variable
             if [ $SUCCESS = 1 ]
             then
               echo "Migration should be reverted"
@@ -158,46 +157,37 @@ jobs:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      # Checkout code from git
       - checkout
-      # Restore from cache
       - restore_cache:
           keys: [frontend-build]
-      # Your job code here
       - run:
           name: Test frontend
           command: |
             cd frontend
-            npm i 
+            npm install
             npm run test
                 
   test-backend:
     docker:
       - image: circleci/node:13.8.0
     steps:
-     # Checkout code from git
       - checkout
-     # Restore from cache
       - restore_cache:
           keys: [backend-build]
-     # Your job code here
       - run:
           name: Test backend
           command: |
             cd backend
-            npm i 
+            npm install
             npm run test
             
   scan-frontend:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      # Checkout code from git
       - checkout
-      # Restore from cache
       - restore_cache:
           keys: [frontend-build]
-      # Your job code here
       - run:
           name: Scan frontend
           command: |
@@ -208,12 +198,9 @@ jobs:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      # Checkout code from git
       - checkout
-     # Restore from cache
       - restore_cache:
           keys: [backend-build]
-      # Your job code here
       - run:
           name: Scan backend
           command: |
@@ -224,8 +211,8 @@ jobs:
     docker:
       - image: amazon/aws-cli 
     steps:
-      - checkout        # Checkout code from git
-      - run: yum install -y tar gzip   #Install tar and gzip to use workspaces
+      - checkout 
+      - run: yum install -y tar gzip
       - run: 
           name: Save old workflowID to Memstash
           command: |
@@ -248,7 +235,6 @@ jobs:
             --stack-name udacity-backend-${CIRCLE_WORKFLOW_ID:0:7} \
             --query "Stacks[0].Outputs[0].OutputValue" \
             --output=text)
-            #curl -H "Content-Type: text/plain" -H "token: ${MEMSTASH_TOKEN}" --request PUT --data "${BACKEND_IP}" https://api.memstash.io/values/backend_${CIRCLE_WORKFLOW_ID}
             curl -H "Content-Type: text/plain" -H "token: ${MEMSTASH_TOKEN}" --request PUT --data "${BACKEND_IP}" https://api.memstash.io/values/backend_${CIRCLE_WORKFLOW_ID}      
       - run:
           name: Add back-end ip to ansible inventory
@@ -276,9 +262,9 @@ jobs:
 
   configure-infrastructure:
     docker:
-      - image: alpine:latest       # Docker image here that supports Ansible
+      - image: alpine:latest 
     steps:
-      - checkout             # Checkout code from git
+      - checkout
       - run: 
           name: Install dependencies
           command: |
@@ -286,7 +272,7 @@ jobs:
             pip3 install awscli
       - attach_workspace:
           at: .          
-      - add_ssh_keys:             # Add ssh keys with fingerprint
+      - add_ssh_keys:             
           fingerprints:
             - "16:2a:a4:6f:d5:e5:f3:89:0b:90:ba:0f:58:3d:1f:ca"
       - run:
@@ -299,9 +285,9 @@ jobs:
 
   run-migrations:
     docker:
-      - image: circleci/node:13.8.0              # Docker image here that supports NodeJS
+      - image: circleci/node:13.8.0
     steps:
-      - checkout          # Checkout code from git
+      - checkout
       - run:
           name: Prepare environment
           command: |
@@ -378,14 +364,14 @@ jobs:
                     
   deploy-backend:
     docker:
-      - image: alpine:latest       # Docker image here that supports Ansible
+      - image: alpine:latest
     steps:
-      - checkout          # Checkout code from git
+      - checkout
       - restore_cache:
           keys: [backend-build]
       - attach_workspace:
           at: . 
-      - add_ssh_keys:             # Add ssh keys with fingerprint
+      - add_ssh_keys:
           fingerprints:
             - "16:2a:a4:6f:d5:e5:f3:89:0b:90:ba:0f:58:3d:1f:ca"
       - run:
@@ -506,52 +492,38 @@ jobs:
             fi
             
 workflows:
-  short:
+  default:
     jobs:
-      - deploy-infrastructure
+      - build-frontend:
+          context:
+            - SLACK
+      - build-backend:
+          context:
+            - SLACK
+      - test-frontend:
+          requires: [build-frontend]
+      - test-backend:
+          requires: [build-backend]
+      - scan-backend:
+          requires: [build-backend]
+      - scan-frontend:
+          requires: [build-frontend]
+      - deploy-infrastructure:
+          requires: [test-frontend, test-backend, scan-frontend, scan-backend]
+          filters:
+            branches:
+              only: [master]
       - configure-infrastructure:
-          requires: [deploy-infrastructure]     
-        #      - run-migrations:
-        #          requires: [configure-infrastructure]
-        #- deploy-frontend:
-        #    requires: [configure-infrastructure]
-        #          requires: [run-migrations]
-      - deploy-backend:
+          requires: [deploy-infrastructure]
+      - run-migrations:
           requires: [configure-infrastructure]
-        #          requires: [run-migrations]
-
-##  default:
-##    jobs:
-##      - build-frontend:
-##          context:
-##            - SLACK
-##      - build-backend:
-##          context:
-##            - SLACK
-##      - test-frontend:
-##          requires: [build-frontend]
-##      - test-backend:
-##          requires: [build-backend]
-##      - scan-backend:
-##          requires: [build-backend]
-##      - scan-frontend:
-##          requires: [build-frontend]
-##      - deploy-infrastructure:
-##          requires: [test-frontend, test-backend, scan-frontend, scan-backend]
-##          filters:
-##            branches:
-##              only: [master]
-##      - configure-infrastructure:
-##          requires: [deploy-infrastructure]
-##      - run-migrations:
-##          requires: [configure-infrastructure]
-##      - deploy-frontend:
-##          requires: [run-migrations]
-##      - deploy-backend:
-##          requires: [run-migrations]
-##      - smoke-test:
-##          requires: [deploy-backend, deploy-frontend]
-##      - cloudfront-update:
-##          requires: [smoke-test]
-##      - cleanup:
-##          requires: [cloudfront-update]
+      - deploy-frontend:
+          requires: [run-migrations]
+      - deploy-backend:
+          requires: [run-migrations]
+      - smoke-test:
+          requires: [deploy-backend, deploy-frontend]
+      - cloudfront-update:
+          requires: [smoke-test]
+      - cleanup:
+          requires: [cloudfront-update]
